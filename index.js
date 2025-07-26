@@ -185,7 +185,7 @@ app.get('/test/oauth', (req, res) => {
     `response_type=code&` +
     `state=test`;
 
-  const tiktokAuthUrl = `https://open-api.tiktok.com/platform/oauth/authorize/?` + 
+  const tiktokAuthUrl = `https://www.tiktok.com/v2/auth/authorize/?` + 
     `client_key=${process.env.TIKTOK_CLIENT_KEY || 'sbaw2j48qq5sj78h3s'}&` +
     `redirect_uri=${encodeURIComponent(`${baseUrl}/auth/tiktok/callback`)}&` +
     `scope=${encodeURIComponent('user.info.basic,user.info.profile,video.upload,video.publish')}&` +
