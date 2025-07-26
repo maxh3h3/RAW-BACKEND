@@ -1,12 +1,51 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const app = express();
+
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 // Enable CORS for all origins
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve static files from uploads directory
+app.use('/videos', express.static(uploadsDir));
+
+// Configure multer for video uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    // Generate unique filename with timestamp
+    const uniqueName = `${Date.now()}_${Math.random().toString(36).substring(7)}.mp4`;
+    cb(null, uniqueName);
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 100 * 1024 * 1024 // 100MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept only video files
+    if (file.mimetype.startsWith('video/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only video files are allowed'));
+    }
+  }
+});
 
 // Environment variables
 const PORT = process.env.PORT || 3000;
@@ -17,7 +56,8 @@ console.log('🔧 Social Media Bridge Server Starting...', {
   port: PORT,
   verifyToken: INSTAGRAM_VERIFY_TOKEN ? 'Set' : 'Missing',
   mobileScheme: MOBILE_APP_SCHEME,
-  platforms: ['Instagram', 'TikTok']
+  platforms: ['Instagram', 'TikTok'],
+  features: ['OAuth Bridge', 'Video CDN']
 });
 
 // Root endpoint for health check
@@ -33,10 +73,122 @@ app.get('/', (req, res) => {
       tiktok: {
         oauth: '/auth/tiktok/callback'
       },
+      videos: {
+        upload: 'POST /api/videos/upload',
+        serve: 'GET /videos/:filename'
+      },
       health: '/'
     },
     timestamp: new Date().toISOString()
   });
+});
+
+// Video upload endpoint for Instagram CDN
+app.post('/api/videos/upload', upload.single('video'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'No video file provided'
+      });
+    }
+
+    const baseUrl = req.get('host').includes('localhost') 
+      ? `http://${req.get('host')}` 
+      : `https://${req.get('host')}`;
+    
+    const publicUrl = `${baseUrl}/videos/${req.file.filename}`;
+
+    console.log('📹 Video uploaded successfully:', {
+      filename: req.file.filename,
+      size: req.file.size,
+      publicUrl: publicUrl
+    });
+
+    res.json({
+      success: true,
+      data: {
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        publicUrl: publicUrl
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Video upload failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Video upload failed',
+      message: error.message
+    });
+  }
+});
+
+// Video deletion endpoint (for cleanup)
+app.delete('/api/videos/:filename', (req, res) => {
+  try {
+    const filename = req.params.filename;
+    const filePath = path.join(uploadsDir, filename);
+
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log('🗑️ Video deleted:', filename);
+      res.json({
+        success: true,
+        message: 'Video deleted successfully'
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Video not found'
+      });
+    }
+  } catch (error) {
+    console.error('❌ Video deletion failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Video deletion failed',
+      message: error.message
+    });
+  }
+});
+
+// Get video info endpoint
+app.get('/api/videos/:filename/info', (req, res) => {
+  try {
+    const filename = req.params.filename;
+    const filePath = path.join(uploadsDir, filename);
+
+    if (fs.existsSync(filePath)) {
+      const stats = fs.statSync(filePath);
+      const baseUrl = req.get('host').includes('localhost') 
+        ? `http://${req.get('host')}` 
+        : `https://${req.get('host')}`;
+      
+      res.json({
+        success: true,
+        data: {
+          filename: filename,
+          size: stats.size,
+          created: stats.birthtime,
+          publicUrl: `${baseUrl}/videos/${filename}`
+        }
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Video not found'
+      });
+    }
+  } catch (error) {
+    console.error('❌ Video info failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get video info',
+      message: error.message
+    });
+  }
 });
 
 // Instagram OAuth Callback Bridge
