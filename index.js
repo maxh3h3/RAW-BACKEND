@@ -13,19 +13,26 @@ const PORT = process.env.PORT || 3000;
 const INSTAGRAM_VERIFY_TOKEN = process.env.INSTAGRAM_VERIFY_TOKEN || 'instagram_webhook_verify_123';
 const MOBILE_APP_SCHEME = 'com.maxkos.raw';
 
-console.log('🔧 Instagram Bridge Server Starting...', {
+console.log('🔧 Social Media Bridge Server Starting...', {
   port: PORT,
   verifyToken: INSTAGRAM_VERIFY_TOKEN ? 'Set' : 'Missing',
-  mobileScheme: MOBILE_APP_SCHEME
+  mobileScheme: MOBILE_APP_SCHEME,
+  platforms: ['Instagram', 'TikTok']
 });
 
 // Root endpoint for health check
 app.get('/', (req, res) => {
   res.json({
-    status: 'Instagram Bridge Server Running',
+    status: 'Social Media Bridge Server Running',
+    platforms: ['Instagram', 'TikTok'],
     endpoints: {
-      oauth: '/auth/instagram/callback',
-      webhook: '/webhook/instagram',
+      instagram: {
+        oauth: '/auth/instagram/callback',
+        webhook: '/webhook/instagram'
+      },
+      tiktok: {
+        oauth: '/auth/tiktok/callback'
+      },
       health: '/'
     },
     timestamp: new Date().toISOString()
@@ -66,6 +73,44 @@ app.get('/auth/instagram/callback', (req, res) => {
   // No code or error - invalid request
   console.error('❌ Invalid OAuth callback - no code or error provided');
   const mobileUrl = `${MOBILE_APP_SCHEME}://auth/instagram/error?error=invalid_request&description=No authorization code received`;
+  
+  res.redirect(mobileUrl);
+});
+
+// TikTok OAuth Callback Bridge
+// Receives OAuth redirect from TikTok → forwards to mobile app
+app.get('/auth/tiktok/callback', (req, res) => {
+  console.log('📱 TikTok OAuth Callback received:', {
+    query: req.query,
+    headers: req.headers,
+    timestamp: new Date().toISOString()
+  });
+
+  const { code, state, error, error_description } = req.query;
+
+  if (error) {
+    console.error('❌ TikTok OAuth Error:', { error, error_description });
+    
+    // Redirect to mobile app with error
+    const mobileUrl = `${MOBILE_APP_SCHEME}://auth/tiktok/error?error=${encodeURIComponent(error)}&description=${encodeURIComponent(error_description || 'OAuth failed')}`;
+    
+    return res.redirect(mobileUrl);
+  }
+
+  if (code) {
+    console.log('✅ TikTok OAuth Success - Authorization code received');
+    
+    // Redirect to mobile app with authorization code
+    const mobileUrl = `${MOBILE_APP_SCHEME}://auth/tiktok/success?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state || '')}`;
+    
+    console.log('🔄 Redirecting to mobile app:', mobileUrl);
+    
+    return res.redirect(mobileUrl);
+  }
+
+  // No code or error - invalid request
+  console.error('❌ Invalid TikTok OAuth callback - no code or error provided');
+  const mobileUrl = `${MOBILE_APP_SCHEME}://auth/tiktok/error?error=invalid_request&description=No authorization code received`;
   
   res.redirect(mobileUrl);
 });
@@ -129,19 +174,37 @@ app.post('/webhook/instagram', (req, res) => {
   res.status(200).json({ status: 'received' });
 });
 
-// Test endpoint for OAuth flow
+// Test endpoint for OAuth flows
 app.get('/test/oauth', (req, res) => {
+  const baseUrl = `https://${req.get('host')}`;
+  
   const instagramAuthUrl = `https://api.instagram.com/oauth/authorize?` + 
     `client_id=${process.env.INSTAGRAM_APP_ID || '1257332929203574'}&` +
-    `redirect_uri=${encodeURIComponent('https://your-server.com/auth/instagram/callback')}&` +
+    `redirect_uri=${encodeURIComponent(`${baseUrl}/auth/instagram/callback`)}&` +
     `scope=instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish&` +
     `response_type=code&` +
     `state=test`;
 
+  const tiktokAuthUrl = `https://www.tiktok.com/auth/authorize/?` + 
+    `client_key=${process.env.TIKTOK_CLIENT_KEY || 'your_tiktok_client_key'}&` +
+    `redirect_uri=${encodeURIComponent(`${baseUrl}/auth/tiktok/callback`)}&` +
+    `scope=${encodeURIComponent('user.info.basic,user.info.profile,video.upload,video.publish')}&` +
+    `response_type=code&` +
+    `state=test`;
+
   res.json({
-    message: 'Test Instagram OAuth URL',
-    authUrl: instagramAuthUrl,
-    note: 'Replace your-server.com with your actual domain'
+    message: 'Test OAuth URLs',
+    platforms: {
+      instagram: {
+        authUrl: instagramAuthUrl,
+        callback: `${baseUrl}/auth/instagram/callback`
+      },
+      tiktok: {
+        authUrl: tiktokAuthUrl,
+        callback: `${baseUrl}/auth/tiktok/callback`
+      }
+    },
+    note: 'These URLs will redirect back to the mobile app after OAuth'
   });
 });
 
@@ -163,6 +226,7 @@ app.use((req, res) => {
     availableEndpoints: [
       '/',
       '/auth/instagram/callback',
+      '/auth/tiktok/callback',
       '/webhook/instagram',
       '/test/oauth'
     ]
@@ -171,10 +235,12 @@ app.use((req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Instagram Bridge Server running on port ${PORT}`);
+  console.log(`🚀 Social Media Bridge Server running on port ${PORT}`);
   console.log(`📱 Health check: http://localhost:${PORT}/`);
-  console.log(`🔗 OAuth callback: http://localhost:${PORT}/auth/instagram/callback`);
-  console.log(`📡 Webhook endpoint: http://localhost:${PORT}/webhook/instagram`);
+  console.log(`🔗 Instagram OAuth: http://localhost:${PORT}/auth/instagram/callback`);
+  console.log(`🔗 TikTok OAuth: http://localhost:${PORT}/auth/tiktok/callback`);
+  console.log(`📡 Instagram Webhook: http://localhost:${PORT}/webhook/instagram`);
+  console.log(`🧪 Test OAuth URLs: http://localhost:${PORT}/test/oauth`);
 });
 
 module.exports = app; 
