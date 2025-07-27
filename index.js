@@ -12,13 +12,35 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Enable CORS for all origins
-app.use(cors());
+// Enable CORS for production domain
+const corsOptions = {
+  origin: [
+    'https://raw-app.com',
+    'http://localhost:3000',
+    'http://localhost:8081',
+    'exp://localhost:8081', // Expo development
+    /^https:\/\/.*\.netlify\.app$/, // Netlify previews (temporary)
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Serve static files from uploads directory
 app.use('/videos', express.static(uploadsDir));
+
+// Serve static pages (privacy policy, terms, etc.)
+const pagesDir = path.join(__dirname, 'pages');
+if (fs.existsSync(pagesDir)) {
+  app.use(express.static(pagesDir));
+  console.log('📄 Static pages directory found and configured');
+} else {
+  console.warn('⚠️ Pages directory not found. Please ensure pages/ folder is in backend root.');
+}
 
 // Configure multer for video uploads
 const storage = multer.diskStorage({
@@ -93,13 +115,17 @@ app.post('/api/videos/upload', upload.single('video'), (req, res) => {
       });
     }
 
-    const baseUrl = req.get('host').includes('localhost') 
-      ? `http://${req.get('host')}` 
-      : `https://${req.get('host')}`;
+    // Use production domain or localhost for development
+    const host = req.get('host');
+    const baseUrl = host.includes('localhost') 
+      ? `http://${host}` 
+      : host.includes('raw-app.com')
+        ? 'https://raw-app.com'
+        : `https://${host}`; // Fallback for Railway subdomains during migration
     
     const publicUrl = `${baseUrl}/videos/${req.file.filename}`;
-
-    console.log('📹 Video uploaded successfully:', {
+    
+    console.log('🎬 Video uploaded successfully:', {
       filename: req.file.filename,
       size: req.file.size,
       publicUrl: publicUrl
