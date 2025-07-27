@@ -15,7 +15,8 @@ if (!fs.existsSync(uploadsDir)) {
 // Enable CORS for production domain
 const corsOptions = {
   origin: [
-    'https://raw-app.com',
+    'https://www.raw-app.com',
+    'https://raw-app.com', // Fallback for non-www
     'http://localhost:3000',
     'http://localhost:8081',
     'exp://localhost:8081', // Expo development
@@ -120,8 +121,8 @@ app.post('/api/videos/upload', upload.single('video'), (req, res) => {
     const baseUrl = host.includes('localhost') 
       ? `http://${host}` 
       : host.includes('raw-app.com')
-        ? 'https://raw-app.com'
-        : `https://${host}`; // Fallback for Railway subdomains during migration
+        ? 'https://www.raw-app.com'
+        : `https://${host}`; // Fallback for Railway subdomains
     
     const publicUrl = `${baseUrl}/videos/${req.file.filename}`;
     
