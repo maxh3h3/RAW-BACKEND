@@ -138,7 +138,13 @@ app.post('/api/videos/upload', upload.single('video'), (req, res) => {
         filename: req.file.filename,
         originalName: req.file.originalname,
         size: req.file.size,
-        publicUrl: publicUrl
+        publicUrl: publicUrl,
+        cleanup: {
+          endpoint: '/api/videos/cleanup',
+          method: 'DELETE',
+          body: { filename: req.file.filename },
+          instruction: 'Call this endpoint to delete video after Instagram processing'
+        }
       }
     });
 
@@ -147,6 +153,44 @@ app.post('/api/videos/upload', upload.single('video'), (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Video upload failed',
+      message: error.message
+    });
+  }
+});
+
+// LEAN APPROACH: Video cleanup endpoint (expects filename in body)
+app.delete('/api/videos/cleanup', (req, res) => {
+  try {
+    const { filename } = req.body;
+    
+    if (!filename) {
+      return res.status(400).json({
+        success: false,
+        error: 'Filename required for cleanup'
+      });
+    }
+
+    const filePath = path.join(uploadsDir, filename);
+
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log('🧹 Video cleaned up after Instagram processing:', filename);
+      res.json({
+        success: true,
+        message: 'Video cleaned up successfully',
+        deletedFile: filename
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Video not found'
+      });
+    }
+  } catch (error) {
+    console.error('❌ Video cleanup failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Cleanup failed',
       message: error.message
     });
   }
